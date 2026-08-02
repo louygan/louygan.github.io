@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Paste as Plain Text (Keep Newlines)</title>
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            max-width: 900px;
+            margin: 40px auto;
+            padding: 0 20px;
+            background: #f5f5f5;
+        }
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+        }
+        p.hint {
+            color: #666;
+            margin-bottom: 20px;
+        }
+        #editor {
+            width: 100%;
+            min-height: 400px;
+            padding: 16px;
+            border: 2px solid #ccc;
+            border-radius: 8px;
+            background: #fff;
+            font-family: 'Segoe UI', sans-serif;
+            font-size: 14px;
+            line-height: 1.6;
+            white-space: pre-wrap;
+            overflow-y: auto;
+            outline: none;
+        }
+        #editor:focus {
+            border-color: #4a90d9;
+        }
+        .toolbar {
+            margin-top: 12px;
+            display: flex;
+            gap: 10px;
+        }
+        button {
+            padding: 8px 16px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            background: #fff;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        button:hover {
+            background: #e8e8e8;
+        }
+    </style>
+</head>
+<body>
+    <h1>Paste as Plain Text</h1>
+    <p class="hint">Paste formatted text below — formatting will be stripped but newlines are preserved.</p>
+    <div id="editor" contenteditable="true" spellcheck="true"></div>
+    <div class="toolbar">
+        <button onclick="copyText()">Copy as Plain Text</button>
+        <button onclick="clearEditor()">Clear</button>
+    </div>
+
+    <script>
+        const editor = document.getElementById('editor');
+
+        editor.addEventListener('paste', function(e) {
+            e.preventDefault();
+
+            const html = e.clipboardData.getData('text/html');
+            const plain = e.clipboardData.getData('text/plain');
+
+            let text;
+            if (html) {
+                text = htmlToPlainText(html, plain);
+            } else {
+                text = plain;
+            }
+
+            // Insert the plain text preserving newlines
+            insertPlainText(text);
+        });
+
+        function htmlToPlainText(html, plainFallback) {
+            const temp = document.createElement('div');
+            temp.innerHTML = html;
+
+            // Process the DOM tree in order, handling both text and tables
+            function processNode(node) {
+                let result = '';
+
+                for (const child of node.childNodes) {
+                    if (child.nodeType === Node.TEXT_NODE) {
+                        result += child.textContent;
+                    } else if (child.nodeType === Node.ELEMENT_NODE) {
+                        const tag = child.tagName.toLowerCase();
+
+                        if (tag === 'table') {
+                            // Process table: extract rows with tab-separated cells
+                            child.querySelectorAll('tr').forEach(tr => {
+                                let cells = [];
+                                tr.querySelectorAll(':scope > td, :scope > th').forEach(cell => {
+                                    cells.push(cell.textContent.trim());
+                                });
+                                if (cells.length > 0) {
+                                    result += cells.join('\t') + '\n';
+                                }
+                            });
+                        } else if (tag === 'br') {
+                            result += '\n';
+                        } else if (['p', 'div', 'li', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'blockquote', 'pre', 'tr'].includes(tag)) {
+                            result += processNode(child);
+                            result += '\n';
+                        } else {
+                            result += processNode(child);
+                        }
+                    }
+                }
+                return result;
+            }
+
+            let text = processNode(temp);
+            // Collapse 3+ consecutive newlines into 2
+            text = text.replace(/\n{3,}/g, '\n\n');
+            // Trim trailing whitespace on each line but keep newlines
+            text = text.split('\n').map(line => line.trimEnd()).join('\n');
+            // Trim leading/trailing newlines
+            text = text.trim();
+            return text;
+        }
+
+        function insertPlainText(text) {
+            const selection = window.getSelection();
+            if (!selection.rangeCount) {
+                editor.focus();
+            }
+
+            // Split by newlines and insert as text nodes with <br> for newlines
+            const lines = text.split('\n');
+            const fragment = document.createDocumentFragment();
+
+            lines.forEach((line, index) => {
+                fragment.appendChild(document.createTextNode(line));
+                if (index < lines.length - 1) {
+                    fragment.appendChild(document.createElement('br'));
+                }
+            });
+
+            const range = selection.getRangeAt(0);
+            range.deleteContents();
+            range.insertNode(fragment);
+
+            // Move cursor to end of inserted content
+            range.collapse(false);
+            selection.removeAllRanges();
+            selection.addRange(range);
+        }
+
+        // Also prevent formatting via keyboard shortcuts
+        editor.addEventListener('keydown', function(e) {
+            if (e.ctrlKey || e.metaKey) {
+                if (['b', 'i', 'u'].includes(e.key.toLowerCase())) {
+                    e.preventDefault();
+                }
+            }
+        });
+
+        function copyText() {
+            const text = editor.innerText;
+            navigator.clipboard.writeText(text).then(() => {
+                const btn = event.target;
+                btn.textContent = 'Copied!';
+                setTimeout(() => btn.textContent = 'Copy as Plain Text', 1500);
+            });
+        }
+
+        function clearEditor() {
+            editor.innerHTML = '';
+            editor.focus();
+        }
+    </script>
+</body>
+</html>
